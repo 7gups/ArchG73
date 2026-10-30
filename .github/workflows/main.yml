@@ -12,7 +12,7 @@ env:
   BUSYBOX_SHA256: "b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314"
   BUSYBOX_KEY_FPR: "C9E9416F76E610DBD09D040F47B70C55ACC9965B"
   MKBOOTIMG_REPO: "https://android.googlesource.com/platform/system/tools/mkbootimg"
-  MKBOOTIMG_COMMIT: "d9b6f190d326e9f0b7b1107b92373d53537f9a90"
+  MKBOOTIMG_COMMIT: "d2bb0af5ba6d3198a3e99529c97eda1be0b5a093"
 
 permissions:
   contents: read
@@ -104,6 +104,7 @@ jobs:
         run: |
           git clone "${MKBOOTIMG_REPO}" mkbootimg
           cd mkbootimg
+          test "$(git cat-file -t "${MKBOOTIMG_COMMIT}")" = "commit"
           git checkout "${MKBOOTIMG_COMMIT}"
           test "$(git rev-parse HEAD)" = "${MKBOOTIMG_COMMIT}"
 
