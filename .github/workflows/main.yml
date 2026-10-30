@@ -1,11 +1,16 @@
 name: build-g0771
 
 on:
+  push:
+    branches:
+      - ums9230
+    paths:
+      - "arch/arm64/boot/dts/sprd/**"
   workflow_dispatch:
     inputs:
       kernel_ref:
-        description: Full 40-character commit hash on 7gups/ArchG73 (ums9230 branch)
-        required: true
+        description: Branch or commit to build (leave empty to build the pushed commit)
+        required: false
 
 env:
   BUSYBOX_VERSION: "1.36.1"
@@ -16,6 +21,10 @@ env:
 
 permissions:
   contents: read
+
+concurrency:
+  group: build-g0771-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   kernel:
@@ -28,11 +37,10 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
             device-tree-compiler flex bison libssl-dev libelf-dev bc
 
-      - name: Checkout pinned kernel
+      - name: Checkout kernel at this commit
         uses: actions/checkout@v4
         with:
-          repository: 7gups/ArchG73
-          ref: ${{ inputs.kernel_ref }}
+          ref: ${{ inputs.kernel_ref || github.sha }}
           path: kernel
           fetch-depth: 1
 
@@ -43,6 +51,7 @@ jobs:
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" \
             Image sprd/ums9230-blu-g0771.dtb 2>&1 | tee build.log
           mkdir -p ../out
+          git rev-parse HEAD > ../out/kernel-commit.txt
           cp arch/arm64/boot/Image ../out/
           cp arch/arm64/boot/dts/sprd/ums9230-blu-g0771.dtb ../out/
           cp build.log ../out/
@@ -126,7 +135,7 @@ jobs:
             --cmdline "console=ttyS1,115200n8 earlycon=sprd_serial,0x200b0000 loglevel=8 panic=10 rdinit=/bin/sh" \
             --os_version 13 --os_patch_level 2026-10 \
             --output boot.img
-          sha256sum boot.img out/Image out/ums9230-blu-g0771.dtb > SHA256SUMS
+          sha256sum boot.img out/Image out/ums9230-blu-g0771.dtb out/kernel-commit.txt > SHA256SUMS
 
       - uses: actions/upload-artifact@v4
         with:
