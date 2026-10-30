@@ -1,0 +1,132 @@
+name: build-g0771
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Full 40-character commit hash on 7gups/ArchG73 (ums9230 branch)
+        required: true
+
+env:
+  BUSYBOX_VERSION: "1.36.1"
+  BUSYBOX_SHA256: "b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314"
+  BUSYBOX_KEY_FPR: "C9E9416F76E610DBD09D040F47B70C55ACC9965B"
+  MKBOOTIMG_REPO: "https://android.googlesource.com/platform/system/tools/mkbootimg"
+  MKBOOTIMG_COMMIT: "d9b6f190d326e9f0b7b1107b92373d53537f9a90"
+
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+            device-tree-compiler flex bison libssl-dev libelf-dev bc
+
+      - name: Checkout pinned kernel
+        uses: actions/checkout@v4
+        with:
+          repository: 7gups/ArchG73
+          ref: ${{ inputs.kernel_ref }}
+          path: kernel
+          fetch-depth: 1
+
+      - name: Build Image and DTB
+        working-directory: kernel
+        run: |
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" \
+            Image sprd/ums9230-blu-g0771.dtb 2>&1 | tee build.log
+          mkdir -p ../out
+          cp arch/arm64/boot/Image ../out/
+          cp arch/arm64/boot/dts/sprd/ums9230-blu-g0771.dtb ../out/
+          cp build.log ../out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-out
+          path: out/
+          retention-days: 14
+
+  pack:
+    needs: kernel
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Download kernel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kernel-out
+          path: out
+
+      - name: Download busybox, signature, and key
+        run: |
+          curl -fsSL -o busybox.tar.bz2 \
+            "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2"
+          curl -fsSL -o busybox.tar.bz2.sig \
+            "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2.sig"
+          curl -fsSL -o vda_pubkey.gpg \
+            "https://busybox.net/~vda/vda_pubkey.gpg"
+
+      - name: Verify busybox SHA-256
+        run: echo "${BUSYBOX_SHA256}  busybox.tar.bz2" | sha256sum -c -
+
+      - name: Verify busybox signature and key fingerprint
+        run: |
+          gpg --batch --import vda_pubkey.gpg
+          gpg --batch --status-fd 1 --verify busybox.tar.bz2.sig busybox.tar.bz2 > gpg-status.txt
+          grep -q "VALIDSIG ${BUSYBOX_KEY_FPR}" gpg-status.txt
+
+      - name: Build static busybox
+        run: |
+          tar xf busybox.tar.bz2
+          cd "busybox-${BUSYBOX_VERSION}"
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+          sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)"
+          cp busybox "$GITHUB_WORKSPACE/busybox"
+
+      - name: Fetch mkbootimg at pinned commit
+        run: |
+          git clone "${MKBOOTIMG_REPO}" mkbootimg
+          cd mkbootimg
+          git checkout "${MKBOOTIMG_COMMIT}"
+          test "$(git rev-parse HEAD)" = "${MKBOOTIMG_COMMIT}"
+
+      - name: Build initramfs
+        run: |
+          mkdir -p ramdisk/bin ramdisk/dev ramdisk/proc ramdisk/sys
+          cp busybox ramdisk/bin/busybox
+          chmod +x ramdisk/bin/busybox
+          ln -sf busybox ramdisk/bin/sh
+          (cd ramdisk && find . | cpio -H newc -o | gzip -9) > initramfs.cpio.gz
+
+      - name: Pack boot.img
+        run: |
+          python3 mkbootimg/mkbootimg.py --header_version 2 \
+            --kernel out/Image --ramdisk initramfs.cpio.gz \
+            --dtb out/ums9230-blu-g0771.dtb --base 0 \
+            --kernel_offset 0x00008000 --ramdisk_offset 0x05400000 \
+            --dtb_offset 0x01f00000 --pagesize 4096 \
+            --cmdline "console=ttyS1,115200n8 earlycon=sprd_serial,0x200b0000 loglevel=8 panic=10 rdinit=/bin/sh" \
+            --os_version 13 --os_patch_level 2026-10 \
+            --output boot.img
+          sha256sum boot.img out/Image out/ums9230-blu-g0771.dtb > SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boot-img
+          path: |
+            boot.img
+            SHA256SUMS
+          retention-days: 14
