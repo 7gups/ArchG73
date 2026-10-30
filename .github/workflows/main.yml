@@ -92,6 +92,7 @@ jobs:
           cd "busybox-${BUSYBOX_VERSION}"
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
           sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          grep -q '^CONFIG_STATIC=y' .config
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)"
           cp busybox "$GITHUB_WORKSPACE/busybox"
 
