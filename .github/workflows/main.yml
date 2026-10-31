@@ -43,22 +43,34 @@ jobs:
           ref: ${{ inputs.kernel_ref || github.sha }}
           path: kernel
           fetch-depth: 1
-
       - name: Build Image and DTB
         working-directory: kernel
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
 
-          # Config check: report the options the serial console and initramfs need.
-          # Reports only; it does not fail the build.
+          # Enable the Unisoc UART driver and its console, which the serial console needs
+          cat >> .config <<'EOF'
+          CONFIG_SERIAL_SPRD=y
+          CONFIG_SERIAL_SPRD_CONSOLE=y
+          EOF
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
           mkdir -p ../out
           : > ../out/kernel-config-check.txt
           for sym in CONFIG_SERIAL_SPRD CONFIG_SERIAL_SPRD_CONSOLE CONFIG_TTY \
                      CONFIG_BLK_DEV_INITRD CONFIG_DEVTMPFS CONFIG_DEVTMPFS_MOUNT \
                      CONFIG_PROC_FS CONFIG_SYSFS; do
-            line=$(grep -E "^${sym}=|^# ${sym} is not set" .config || echo "${sym} missing")
-            echo "$line" | tee -a ../out/kernel-config-check.txt
+            grep -E "^${sym}=|^# ${sym} is not set" .config \
+              || echo "${sym} missing" | tee -a ../out/kernel-config-check.txt
+            grep -E "^${sym}=|^# ${sym} is not set" .config >> ../out/kernel-config-check.txt \
+              || true
           done
+
+          if ! grep -q '^CONFIG_SERIAL_SPRD=y' .config; then
+            echo "CONFIG_SERIAL_SPRD did not enable. Driver Kconfig:"
+            grep -n -B2 -A10 "config SERIAL_SPRD" drivers/tty/serial/Kconfig || true
+            exit 1
+          fi
 
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" \
             Image sprd/ums9230-blu-g0771.dtb 2>&1 | tee build.log
