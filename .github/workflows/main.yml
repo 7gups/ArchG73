@@ -55,6 +55,7 @@ jobs:
           CONFIG_SERIAL_SPRD_CONSOLE=y
           CONFIG_DRM=y
           CONFIG_DRM_SPRD=y
+          CONFIG_DRM_CLIENT_SETUP=y
           CONFIG_DRM_FBDEV_EMULATION=y
           CONFIG_FB=y
           EOF
