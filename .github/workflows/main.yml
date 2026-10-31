@@ -47,7 +47,6 @@ jobs:
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
 
-          # Options the bring-up needs: serial console, display stack, and initramfs support.
           cat >> .config <<'EOF'
           CONFIG_SERIAL_SPRD=y
           CONFIG_SERIAL_SPRD_CONSOLE=y
@@ -61,7 +60,11 @@ jobs:
           EOF
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
-          # Record the state of every option, then fail if a required one is off.
+          # The client library must be built into the kernel, not as a module.
+          # If olddefconfig turned it into a module, force it to built-in and resolve again.
+          sed -i 's/^CONFIG_DRM_CLIENT_LIB=m/CONFIG_DRM_CLIENT_LIB=y/; s/^CONFIG_DRM_CLIENT_SELECTION=m/CONFIG_DRM_CLIENT_SELECTION=y/' .config
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
           mkdir -p ../out
           : > ../out/kernel-config-check.txt
           for sym in CONFIG_SERIAL_SPRD CONFIG_SERIAL_SPRD_CONSOLE CONFIG_TTY \
@@ -79,7 +82,7 @@ jobs:
           required="CONFIG_SERIAL_SPRD CONFIG_SERIAL_SPRD_CONSOLE CONFIG_DRM_SPRD CONFIG_DRM_CLIENT_LIB"
           for sym in $required; do
             if ! grep -q "^${sym}=y" .config; then
-              echo "::error::${sym} is not enabled. Check ../out/kernel-config-check.txt"
+              echo "::error::${sym} is not enabled as built-in. Check the list printed above."
               exit 1
             fi
           done
