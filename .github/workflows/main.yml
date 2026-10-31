@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - ums9230
-    paths:
-      - "arch/arm64/boot/dts/sprd/**"
   workflow_dispatch:
     inputs:
       kernel_ref:
