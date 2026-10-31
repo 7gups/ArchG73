@@ -43,34 +43,45 @@ jobs:
           ref: ${{ inputs.kernel_ref || github.sha }}
           path: kernel
           fetch-depth: 1
+
       - name: Build Image and DTB
         working-directory: kernel
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
 
-          # Enable the Unisoc UART driver and its console, which the serial console needs
+          # Options the bring-up needs: serial console, display stack, and initramfs support.
           cat >> .config <<'EOF'
           CONFIG_SERIAL_SPRD=y
           CONFIG_SERIAL_SPRD_CONSOLE=y
+          CONFIG_DRM=y
+          CONFIG_DRM_SPRD=y
+          CONFIG_DRM_FBDEV_EMULATION=y
+          CONFIG_FB=y
           EOF
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
+          # Record the state of every option, then fail if a required one is off.
           mkdir -p ../out
           : > ../out/kernel-config-check.txt
           for sym in CONFIG_SERIAL_SPRD CONFIG_SERIAL_SPRD_CONSOLE CONFIG_TTY \
                      CONFIG_BLK_DEV_INITRD CONFIG_DEVTMPFS CONFIG_DEVTMPFS_MOUNT \
-                     CONFIG_PROC_FS CONFIG_SYSFS; do
-            grep -E "^${sym}=|^# ${sym} is not set" .config \
-              || echo "${sym} missing" | tee -a ../out/kernel-config-check.txt
-            grep -E "^${sym}=|^# ${sym} is not set" .config >> ../out/kernel-config-check.txt \
-              || true
+                     CONFIG_PROC_FS CONFIG_SYSFS \
+                     CONFIG_DRM CONFIG_DRM_SPRD CONFIG_DRM_FBDEV_EMULATION CONFIG_FB; do
+            line=$(grep -E "^${sym}=|^# ${sym} is not set" .config || true)
+            [ -n "$line" ] || line="${sym} missing"
+            echo "$line" >> ../out/kernel-config-check.txt
           done
+          cat ../out/kernel-config-check.txt
 
-          if ! grep -q '^CONFIG_SERIAL_SPRD=y' .config; then
-            echo "CONFIG_SERIAL_SPRD did not enable. Driver Kconfig:"
-            grep -n -B2 -A10 "config SERIAL_SPRD" drivers/tty/serial/Kconfig || true
-            exit 1
-          fi
+          required="CONFIG_SERIAL_SPRD CONFIG_SERIAL_SPRD_CONSOLE CONFIG_DRM_SPRD"
+          for sym in $required; do
+            if ! grep -q "^${sym}=y" .config; then
+              echo "::error::${sym} is not enabled. Check ../out/kernel-config-check.txt"
+              grep -n -B2 -A10 "config ${sym#CONFIG_}" drivers/tty/serial/Kconfig \
+                drivers/gpu/drm/sprd/Kconfig 2>/dev/null || true
+              exit 1
+            fi
+          done
 
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" \
             Image sprd/ums9230-blu-g0771.dtb 2>&1 | tee build.log
