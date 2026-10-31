@@ -9,11 +9,17 @@
 	model = "BLU G73 (G0771) bringup";
 	compatible = "blu,g0771", "sprd,ums9230-1h10", "sprd,ums9230";
 
-	chosen {
-		/* Serial console and early output, then an initramfs shell for debugging.
-		 * console=ttyS1 matches the stock vendor_boot command line.
-		 * earlycon address assumes UART1 at 0x200b0000, from the Reeder/SoC layout. TODO: verify. */
-		bootargs = "console=ttyS1,115200n8 earlycon=sprd_serial,0x200b0000 loglevel=8 panic=10 rdinit=/bin/sh";
-		/* TODO: set stdout-path to the UART node label from ums9230.dtsi */
+	aliases {
+		serial0 = &uart0;	/* TODO: confirm label in ums9230.dtsi */
+		serial1 = &uart1;	/* TODO: confirm label in ums9230.dtsi */
 	};
+
+	chosen {
+		stdout-path = "serial1:115200n8";
+		bootargs = "console=ttyS1,115200n8 earlycon=sprd_serial,0x200b0000 loglevel=8 panic=10 rdinit=/init";
+	};
+};
+
+&uart1 {
+	status = "okay";
 };
