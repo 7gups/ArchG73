@@ -55,6 +55,8 @@ jobs:
           CONFIG_SERIAL_SPRD_CONSOLE=y
           CONFIG_DRM=y
           CONFIG_DRM_SPRD=y
+          CONFIG_DRM_CLIENT_SELECTION=y
+          CONFIG_DRM_CLIENT_LIB=y
           CONFIG_DRM_CLIENT_SETUP=y
           CONFIG_DRM_FBDEV_EMULATION=y
           CONFIG_FB=y
@@ -67,19 +69,19 @@ jobs:
           for sym in CONFIG_SERIAL_SPRD CONFIG_SERIAL_SPRD_CONSOLE CONFIG_TTY \
                      CONFIG_BLK_DEV_INITRD CONFIG_DEVTMPFS CONFIG_DEVTMPFS_MOUNT \
                      CONFIG_PROC_FS CONFIG_SYSFS \
-                     CONFIG_DRM CONFIG_DRM_SPRD CONFIG_DRM_FBDEV_EMULATION CONFIG_FB; do
+                     CONFIG_DRM CONFIG_DRM_SPRD CONFIG_DRM_CLIENT_SELECTION \
+                     CONFIG_DRM_CLIENT_LIB CONFIG_DRM_CLIENT_SETUP \
+                     CONFIG_DRM_FBDEV_EMULATION CONFIG_FB; do
             line=$(grep -E "^${sym}=|^# ${sym} is not set" .config || true)
             [ -n "$line" ] || line="${sym} missing"
             echo "$line" >> ../out/kernel-config-check.txt
           done
           cat ../out/kernel-config-check.txt
 
-          required="CONFIG_SERIAL_SPRD CONFIG_SERIAL_SPRD_CONSOLE CONFIG_DRM_SPRD"
+          required="CONFIG_SERIAL_SPRD CONFIG_SERIAL_SPRD_CONSOLE CONFIG_DRM_SPRD CONFIG_DRM_CLIENT_LIB"
           for sym in $required; do
             if ! grep -q "^${sym}=y" .config; then
               echo "::error::${sym} is not enabled. Check ../out/kernel-config-check.txt"
-              grep -n -B2 -A10 "config ${sym#CONFIG_}" drivers/tty/serial/Kconfig \
-                drivers/gpu/drm/sprd/Kconfig 2>/dev/null || true
               exit 1
             fi
           done
